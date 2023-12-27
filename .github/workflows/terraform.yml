@@ -1,0 +1,79 @@
+# This workflow installs the latest version of Terraform CLI.
+# On pull request events, it will run `terraform init`, `terraform fmt`, `terraform plan` and `terraform apply` in the TESTING environment. Also, a execution plan for the PRODUCTION environment will be generated.
+# On push events to the "main" branch, it will run `terraform init`, `terraform fmt`, `terraform plan` and `terraform apply` in the PRODUCTION environment. 
+
+name: 'Terraform CI/CD'
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: 'Terraform CI'
+    runs-on: ubuntu-latest
+    environment: development
+
+    env:
+      TERRAFORM_VERSION: 1.6.6
+    # Configure AWS credentials
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+
+    # Use the Bash shell
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    # Checkout the repository
+    - name: Checkout
+      uses: actions/checkout@v3
+    
+    # Set up Terraform
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+    # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
+    - name: Terraform Init
+      run: terraform init
+
+    # Checks that all Terraform configuration files adhere to a canonical format
+    - name: Terraform Format
+      run: terraform fmt -check
+
+    # Create/Select terraform workspace for testing environment
+    - name: Terraform Workspace
+      if: github.ref != 'refs/heads/main' && github.event_name == 'push'
+      run: terraform workspace select -or-create testing
+
+    # Generates an execution plan for testing environment
+    - name: Terraform Plan
+      if: github.ref != 'refs/heads/main' && github.event_name == 'push'
+      run: terraform plan -input=false
+    
+    # On push to a feature branch, build or change infrastructure in the TESTING environment according to Terraform configuration files
+    # - name: Terraform Apply
+    #   if: github.ref != 'refs/heads/main' && github.event_name == 'push'
+    #   run: terraform apply -auto-approve -input=false
+
+    # Create/Select terraform workspace for production environment
+    - name: Terraform Workspace
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: terraform workspace select -or-create production
+
+    # Generates an execution plan for production environment
+    - name: Terraform Plan
+      run: terraform plan -input=false
+
+    # On push to "main", build or change infrastructure according to Terraform configuration files
+    # - name: Terraform Apply
+    #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    #   run: terraform apply -auto-approve -input=false
+  
